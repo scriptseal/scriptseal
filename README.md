@@ -1,4 +1,8 @@
-# Violentmonkey
+# Scriptseal
+
+Scriptseal is a fork of Violentmonkey and it provides userscripts support for browsers just as Violentmonkey but with hardened security and foolproof default settings. Scriptseal is less flexible and pleasant for casual using and intended to be used inside smaller teams or communities.
+
+# Original Violentmonkey readme
 
 [![Chrome Web Store](https://img.shields.io/chrome-web-store/v/jinjaccalgkegednnccohejagnlnfdag.svg)](https://chrome.google.com/webstore/detail/violentmonkey/jinjaccalgkegednnccohejagnlnfdag)
 [![Firefox Add-ons](https://img.shields.io/amo/v/violentmonkey.svg)](https://addons.mozilla.org/firefox/addon/violentmonkey)
