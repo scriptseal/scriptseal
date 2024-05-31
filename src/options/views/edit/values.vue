@@ -1,65 +1,71 @@
 <template>
-  <div class="edit-values" ref="$el" :data-editing="current && ''">
-    <div class="mb-1">
-      <button @click="onNew" v-if="!readOnly">+</button>
-      <div class="inline-block ml-2" v-if="totalPages > 1">
-        <button :disabled="page === 1" @click="page -= 1">&larr;</button>
-        <span class="ml-1" v-text="page"/> / <span class="mr-1" v-text="totalPages"/>
-        <button :disabled="page >= totalPages" @click="page += 1">&rarr;</button>
-      </div>
-      <span class="ml-2 mr-2c">
-        <span>
-          <template v-if="totalPages > 1">
-            <kbd>PageUp</kbd>, <kbd>PageDown</kbd>,
-          </template>
-          <kbd>↑</kbd>, <kbd>↓</kbd>, <kbd>Tab</kbd>, <kbd>Shift-Tab</kbd>,
+  <div class="edit-values flex" ref="$el" :data-editing="current && ''">
+    <div class="flex-1 flex flex-col">
+      <div class="mb-1">
+        <button @click="onNew" v-if="!readOnly">+</button>
+        <div class="inline-block ml-2" v-if="totalPages > 1">
+          <button :disabled="page === 1" @click="page -= 1">&larr;</button>
+          <span class="ml-1" v-text="page"/> / <span class="mr-1" v-text="totalPages"/>
+          <button :disabled="page >= totalPages" @click="page += 1">&rarr;</button>
+        </div>
+        <span class="ml-2 mr-2c">
+          <span>
+            <template v-if="totalPages > 1">
+              <kbd>PageUp</kbd>, <kbd>PageDown</kbd>,
+            </template>
+            <kbd>↑</kbd>, <kbd>↓</kbd>, <kbd>Tab</kbd>, <kbd>Shift-Tab</kbd>,
+          </span>
+          <span><kbd>Enter</kbd>: {{i18n('buttonEdit')}},</span>
+          <span><kbd>Ctrl-Del</kbd>: {{i18n('buttonRemove')}}</span>
         </span>
-        <span><kbd>Enter</kbd>: {{i18n('buttonEdit')}},</span>
-        <span><kbd>Ctrl-Del</kbd>: {{i18n('buttonRemove')}}</span>
-      </span>
-    </div>
-    <div class="edit-values-table main"
-         @keydown.down.exact="onUpDown"
-         @keydown.up.exact="onUpDown">
-      <a
-        ref="$editAll"
-        class="edit-values-row flex"
-        @click="onEditAll" tabindex="0" v-text="i18n('editValueAllHint')"/>
-      <div
-        v-for="key in pageKeys"
-        :key="key"
-        class="edit-values-row flex monospace-font"
-        @keydown.delete.ctrl.exact="onRemove(key)"
-        @click="onEdit(key)">
-        <div class="ellipsis">
-          <a v-text="key" tabindex="0"/>
-        </div>
-        <div class="ellipsis flex-auto" v-text="getValue(key, true)"></div>
-        <pre v-text="getLength(key)"/>
-        <div class="del" @click.stop="onRemove(key)">
-          <icon name="trash"/>
+      </div>
+      <div class="edit-values-table main"
+         :style="{ '--keyW': pageKeys.width + 'ch' }"
+           @keydown.down.exact="onUpDown"
+           @keydown.up.exact="onUpDown">
+        <a
+          ref="$editAll"
+          class="edit-values-row flex"
+          @click="onEditAll" tabindex="0" v-text="i18n('editValueAllHint')"/>
+        <div
+          v-for="key in pageKeys"
+          :key="key"
+          class="edit-values-row flex monospace-font"
+          @keydown.delete.ctrl.exact="onRemove(key)"
+          @click="onEdit(key)">
+          <div class="ellipsis">
+            <a v-text="key" tabindex="0"/>
+          </div>
+          <div class="ellipsis flex-auto" v-text="getValue(key, true)"></div>
+          <pre v-text="getLength(key)"/>
+          <div class="del" @click.stop="onRemove(key)">
+            <icon name="trash"/>
+          </div>
         </div>
       </div>
-    </div>
-    <h3 v-text="i18n('headerRecycleBin')" v-if="trash"/>
-    <div class="edit-values-table trash monospace-font"
-         @keydown.down.exact="onUpDown"
-         @keydown.up.exact="onUpDown"
-         v-if="trash">
-      <!-- eslint-disable-next-line vue/no-unused-vars -->
-      <div v-for="({ key, cut, len }, trashKey) in trash" :key="trashKey"
-           class="edit-values-row flex"
-           @click="onRestore(trashKey)">
-        <a class="ellipsis" v-text="key" tabindex="0"/>
-        <s class="ellipsis flex-auto" v-text="cut"/>
-        <pre v-text="len"/>
+      <h3 v-text="i18n('headerRecycleBin')" v-if="trash"/>
+      <div class="edit-values-table trash monospace-font"
+           @keydown.down.exact="onUpDown"
+           @keydown.up.exact="onUpDown"
+           v-if="trash">
+        <!-- eslint-disable-next-line vue/no-unused-vars -->
+        <div v-for="({ key, cut, len }, trashKey) in trash" :key="trashKey"
+             class="edit-values-row flex"
+             @click="onRestore(trashKey)">
+          <a class="ellipsis" v-text="key" tabindex="0"/>
+          <s class="ellipsis flex-auto" v-text="cut"/>
+          <pre v-text="len"/>
+        </div>
       </div>
+      <div class="edit-values-empty mt-1" v-if="!loading && !keys.length" v-text="i18n('noValues')"/>
     </div>
-    <div class="edit-values-empty mt-1" v-if="!loading && !keys.length" v-text="i18n('noValues')"/>
-    <div class="edit-values-panel flex flex-col mb-1c" v-if="current">
+    <div class="edit-values-panel flex flex-col flex-1 mb-1c" v-if="current">
       <div class="control">
         <h4 v-text="current.isAll ? i18n('labelEditValueAll') : i18n('labelEditValue')"/>
-        <div>
+        <div class="flex center-items">
+          <a tabindex="0" class="mr-1 flex" @click="editorValueShown = !editorValueShown">
+            <Icon name="cog" :class="{ active: editorValueShown }"/>
+          </a>
           <button v-for="(text, idx) in [i18n('buttonOK'), i18n('buttonApply')]" :key="text"
                   v-text="text" @click="onSave(idx)"
                   :class="{'has-error': current.error, 'save-beacon': !idx}"
@@ -68,6 +74,10 @@
           <button v-text="i18n('buttonCancel')" @click="onCancel" title="Esc"/>
         </div>
       </div>
+      <template v-if="editorValueShown">
+        <p class="my-1" v-html="i18n('descEditorOptions')"/>
+        <setting-text name="valueEditor" json @dblclick="toggleBoolean" :has-save="false"/>
+      </template>
       <label v-show="!current.isAll">
         <span v-text="i18n('valueLabelKey')"/>
         <input type="text" v-model="current.key" :readOnly="!current.isNew || readOnly"
@@ -77,9 +87,9 @@
       </label>
       <label>
         <span v-text="current.isAll ? i18n('valueLabelValueAll') : i18n('valueLabelValue')"/>
-        <!-- TODO: use CodeMirror in json mode -->
         <vm-code
           :value="current.value"
+          :cm-options="cmOptions"
           ref="$value"
           class="h-100 mt-1"
           mode="application/json"
@@ -98,12 +108,14 @@
 import { computed, nextTick, onActivated, onDeactivated, ref, watch } from 'vue';
 import { dumpScriptValue, formatByteLength, getBgPage, isEmpty, sendCmdDirectly } from '@/common';
 import { handleTabNavigation, keyboardService } from '@/common/keyboard';
-import { deepCopy, deepEqual, mapEntry } from '@/common/object';
+import { deepCopy, deepEqual, forEachEntry, mapEntry } from '@/common/object';
 import { WATCH_STORAGE } from '@/common/consts';
+import hookSetting from '@/common/hook-setting';
 import VmCode from '@/common/ui/code';
 import Icon from '@/common/ui/icon';
-import { showMessage } from '@/common/ui';
-import { store } from '../../utils';
+import { getActiveElement, showMessage } from '@/common/ui';
+import SettingText from '@/common/ui/setting-text';
+import { kStorageSize, toggleBoolean } from '../../utils';
 
 const props = defineProps({
   /** @type {VMScript} */
@@ -114,6 +126,7 @@ const $el = ref();
 const $editAll = ref();
 const $key = ref();
 const $value = ref();
+const editorValueShown = ref();
 const isActive = ref();
 const current = ref();
 const loading = ref(true);
@@ -128,13 +141,13 @@ const currentObservables = { error: '', dirty: false };
 const cutLength = s => (s.length > MAX_LENGTH ? s.slice(0, MAX_LENGTH) : s);
 const reparseJson = (str) => {
   try {
-    return JSON.stringify(JSON.parse(str), null, '  ');
+    // eslint-disable-next-line no-use-before-define
+    return JSON.stringify(JSON.parse(str), null, jsonIndent);
   } catch (e) {
     // This shouldn't happen but the storage may get corrupted or modified directly
     return str;
   }
 };
-const getActiveElement = () => document.activeElement;
 /** Uses a negative tabId which is recognized in bg::values.js */
 const fakeSender = () => ({ tab: { id: Math.random() - 2 }, [kFrameId]: 0 });
 const conditionNotEdit = { condition: '!edit' };
@@ -144,10 +157,16 @@ const keys = computed(() => Object.keys(values.value || {}).sort());
 const totalPages = computed(() => Math.ceil(keys.value.length / PAGE_SIZE));
 const pageKeys = computed(() => {
   const offset = PAGE_SIZE * (page.value - 1);
-  return keys.value.slice(offset, offset + PAGE_SIZE);
+  const res = keys.value.slice(offset, offset + PAGE_SIZE);
+  for (let i = 0, max = 0; i < res.length; i++ ) {
+    res.width = max = Math.max(max, res[i].length);
+  }
+  return res;
 });
 
 let cm;
+let cmOptions;
+let jsonIndent = '  ';
 let disposeList;
 let focusedElement;
 let sender;
@@ -170,6 +189,15 @@ onActivated(() => {
     () => root::removeEventListener('focusin', onFocus),
     keyboardService.register('pageup', () => flipPage(-1), conditionNotEdit),
     keyboardService.register('pagedown', () => flipPage(1), conditionNotEdit),
+    hookSetting('valueEditor', val => {
+      cmOptions = val;
+      jsonIndent = ' '.repeat(val?.tabSize || 2);
+      if (cm && val) {
+        for (const key in val) {
+          if (key !== 'mode') cm.setOption(key, val[key]);
+        }
+      }
+    }),
   ];
   storageSentry = chrome.runtime.connect({
     name: WATCH_STORAGE + JSON.stringify({
@@ -239,15 +267,29 @@ function getValue(key, sliced, raw) {
   return sliced ? cutLength(value) : value;
 }
 function getValueAll() {
-  return `{\n  ${
+  return `{\n${jsonIndent}${
     keys.value
     .map(key => `${JSON.stringify(key)}: ${getValue(key)}`)
     .join(',\n')
-    .replace(/\n/g, '\n  ') // also handles nested linebreaks inside objects/arrays
+    .replace(/\n/g, '\n' + jsonIndent) // also handles nested linebreaks inside objects/arrays
   }\n}`;
 }
-function setData(data = {}) {
-  if (!deepEqual(values.value, data)) {
+function setData(data, isSave) {
+  // Note: default parameter doesn't work when data=null
+  data ??= {};
+  const oldData = values.value;
+  let changed;
+  if (isSave) {
+    oldData::forEachEntry(([key, val]) => {
+      if (val !== data[key]) {
+        addToTrash(key);
+        changed = true;
+      }
+    });
+  } else {
+    changed = !deepEqual(oldData, data);
+  }
+  if (changed) {
     values.value = data;
     page.value = Math.min(page.value, totalPages.value) || 1;
     calcSize();
@@ -255,16 +297,19 @@ function setData(data = {}) {
   }
 }
 function calcSize() {
-  store.storageSize = keys.value.reduce((sum, key) => sum
+  const { script } = props;
+  const { $cache = script.$cache = {} } = script;
+  $cache[kStorageSize] = keys.value.reduce((sum, key) => sum
     + key.length + 4 + values.value[key].length + 2, 0);
 }
 async function updateValue({
   key,
   jsonValue,
   rawValue = dumpScriptValue(jsonValue) || '',
-}) {
+}, isSave) {
+  if (isSave) addToTrash(key);
   const { id } = props.script.props;
-  await sendCmdDirectly('UpdateValue', { id, key, raw: rawValue }, undefined, sender);
+  await sendCmdDirectly('UpdateValue', { [id]: { [key]: rawValue } }, undefined, sender);
   if (rawValue) {
     values.value[key] = rawValue;
   } else {
@@ -281,14 +326,17 @@ function onNew() {
     ...currentObservables,
   };
 }
-async function onRemove(key) {
-  updateValue({ key });
+function addToTrash(key) {
   (trash.value || (trash.value = {}))[key + Math.random()] = {
     key,
     rawValue: values.value[key],
     cut: getValue(key, true),
     len: getLength(key),
   };
+}
+function onRemove(key) {
+  updateValue({ key });
+  addToTrash(key);
   if (current.value?.key === key) {
     current.value = null;
   }
@@ -334,11 +382,13 @@ async function onSave(buttonIndex) {
     current.value = null;
   }
   if (cur.isAll) {
+    const newValues = cur.jsonValue::mapEntry(val => dumpScriptValue(val) || '');
     await sendCmdDirectly('SetValueStores', {
-      [props.script.props.id]: cur.jsonValue::mapEntry(val => dumpScriptValue(val) || ''),
+      [props.script.props.id]: newValues,
     });
+    setData(newValues, true);
   } else {
-    await updateValue(cur);
+    await updateValue(cur, true);
   }
 }
 function onCancel() {
@@ -360,11 +410,12 @@ function onChange(isChanged) {
   const cur = current.value;
   cur.dirty = isChanged;
   cur.error = null;
-  if (cur.jsonPaused) return;
   const t0 = performance.now();
+  const str = cm.getValue().trim();
   try {
-    const str = cm.getValue();
-    cur.jsonValue = str.trim() ? JSON.parse(str) : undefined;
+    if (cur.isAll && str[0] !== '{') throw 'Expected { at position 0';
+    if (cur.jsonPaused) return;
+    cur.jsonValue = JSON.parse(str);
   } catch (e) {
     const re = /(position\s+)(\d+)|$/;
     const pos = cm.posFromIndex(+`${e}`.match(re)[2] || 0);
@@ -407,12 +458,22 @@ function onUpDown(evt) {
 
 <style>
 $lightBorder: 1px solid var(--fill-2);
-$editorWidth: 50%;
-$editorGap: calc(100% - $editorWidth);
 
 .edit-values {
-  &[data-editing] {
-    width: $editorGap; /* revealing trashcan icons */
+  gap: 1em;
+  overflow: hidden;
+  @media (max-width: 1200px) {
+    &[data-editing] {
+      flex-direction: column;
+      > :first-child {
+        flex: 0 1 min-content;
+        overflow-y: auto;
+        max-height: 40vh;
+        @media (max-height: 600px) {
+          display: none;
+        }
+      }
+    }
   }
   &-row {
     border: $lightBorder;
@@ -428,7 +489,8 @@ $editorGap: calc(100% - $editorWidth);
       padding: 4px 6px;
       &:first-child {
         position: relative;
-        flex: 0 0 30%;
+        flex: 0 0 var(--keyW);
+        box-sizing: content-box;
         max-width: 240px;
       }
       &:not(:first-child) {
@@ -461,19 +523,10 @@ $editorGap: calc(100% - $editorWidth);
   &-empty {
     color: var(--fill-7);
   }
+  &-table {
+    overflow-y: auto;
+  }
   &-panel {
-    position: absolute;
-    top: 0;
-    right: 0;
-    width: $editorWidth;
-    height: 100%;
-    padding: 8px;
-    box-shadow: -5px 0 5px var(--fill-2);
-    background: var(--bg);
-    z-index: 10;
-    @media (max-width: 767px) {
-      width: 100%;
-    }
     .control {
       display: flex;
       align-items: center;
@@ -504,6 +557,9 @@ $editorGap: calc(100% - $editorWidth);
   }
   .CodeMirror {
     border: $lightBorder;
+  }
+  .icon:not(.active) {
+    fill: var(--fg);
   }
 }
 </style>

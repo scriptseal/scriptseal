@@ -1,7 +1,7 @@
 import {
   compareVersion, dataUri2text, i18n, getScriptHome, isDataUri,
   getFullUrl, getScriptName, getScriptUpdateUrl, isRemote, sendCmd, trueJoin,
-  getScriptPrettyUrl, getScriptRunAt, makePause, isHttpOrHttps, normalizeTag,
+  getScriptPrettyUrl, getScriptRunAt, makePause, isValidHttpUrl, normalizeTag,
 } from '@/common';
 import { INFERRED, TIMEOUT_24HOURS, TIMEOUT_WEEK } from '@/common/consts';
 import { deepSize, forEachEntry, forEachKey, forEachValue } from '@/common/object';
@@ -47,6 +47,9 @@ addOwnCommands({
   CheckRemove: checkRemove,
   RemoveScripts: removeScripts,
   GetData: getData,
+  GetMoreIds({ url, [kTop]: isTop, [IDS]: ids }) {
+    return getScriptsByURL(url, isTop, null, ids);
+  },
   /** @return {VMScript} */
   GetScript: getScript,
   GetSizes: getSizes,
@@ -109,6 +112,7 @@ addOwnCommands({
   if (version !== lastVersion) storage.base.set({ version });
   const data = await storage.base.getMulti();
   const uriMap = {};
+  const defaultCustom = getDefaultCustom();
   data::forEachEntry(([key, script]) => {
     const id = +storage[S_SCRIPT].toId(key);
     if (id && script) {
@@ -132,10 +136,7 @@ addOwnCommands({
         id,
         uri,
       };
-      script.custom = {
-        ...getDefaultCustom(),
-        ...script.custom,
-      };
+      script.custom = Object.assign({}, defaultCustom, script.custom);
       maxScriptId = Math.max(maxScriptId, id);
       maxScriptPosition = Math.max(maxScriptPosition, getInt(script.props.position));
       (script.config.removed ? removedScripts : aliveScripts).push(script);
@@ -261,8 +262,7 @@ const makeEnv = () => ({
   [RUN_AT]: {},
   [SCRIPTS]: [],
 });
-const GMCLIP_RE = /^GM[_.]setClipboard$/;
-const GMVALUES_RE = /^GM[_.](listValues|([gs]et|delete)Value)$/;
+const GMVALUES_RE = /^GM[_.](listValues|([gs]et|delete)Values?)$/;
 const STORAGE_ROUTES = {
   [S_CACHE]: CACHE_KEYS,
   [S_CODE]: IDS,
@@ -277,34 +277,45 @@ const notifiedBadScripts = new Set();
  * @param {string} url
  * @param {boolean} isTop
  * @param {Array} [errors] - omit to enable EnvDelayed mode
- * @return {VMInjection.EnvStart|Promise<VMInjection.EnvDelayed>}
+ * @param {Object} [prevIds] - used by the popup to return an object with only new ids
+ *   (disabled, newly installed, non-matching due to SPA navigation)
+ * @return {VMInjection.EnvStart | VMInjection.EnvDelayed | Object | void }
  */
-export function getScriptsByURL(url, isTop, errors) {
-  testerBatch(errors || true);
-  const allScripts = testBlacklist(url)
-    ? []
-    : aliveScripts.filter(script => (
-      (isTop || !(script.custom.noframes ?? script.meta.noframes))
-      && testScript(url, script)
-    ));
-  testerBatch();
-  if (!allScripts[0]) return;
-  let clipboardChecked = !IS_FIREFOX;
+export function getScriptsByURL(url, isTop, errors, prevIds) {
+  if (testBlacklist(url)) return;
   const allIds = {};
+  const isDelayed = !errors;
   /** @type {VMInjection.EnvStart} */
-  const envStart = makeEnv();
+  let envStart;
   /** @type {VMInjection.EnvDelayed} */
-  const envDelayed = makeEnv();
-  for (const [areaName, listName] of STORAGE_ROUTES_ENTRIES) {
-    envStart[areaName] = {}; envDelayed[areaName] = {};
-    envStart[listName] = []; envDelayed[listName] = [];
-  }
-  allScripts.forEach((script) => {
-    const { id } = script.props;
-    if (!(allIds[id] = +!!script.config.enabled)) {
-      return;
+  let envDelayed;
+  let clipboardChecked = isDelayed || !IS_FIREFOX;
+  let xhrChecked = isDelayed;
+  testerBatch(errors || true);
+  for (const script of aliveScripts) {
+    const {
+      config: { enabled },
+      custom,
+      meta,
+      props: { id },
+    } = script;
+    if ((prevIds ? id in prevIds : !enabled)
+    || !((isTop || !(custom.noframes ?? meta.noframes)) && testScript(url, script))) {
+      continue;
     }
-    const { meta, custom } = script;
+    if (prevIds) {
+      allIds[id] = enabled ? MORE : 0;
+      continue;
+    }
+    allIds[id] = 1;
+    if (!envStart) {
+      envStart = makeEnv();
+      envDelayed = makeEnv();
+      for (const [areaName, listName] of STORAGE_ROUTES_ENTRIES) {
+        envStart[areaName] = {}; envDelayed[areaName] = {};
+        envStart[listName] = []; envDelayed[listName] = [];
+      }
+    }
     const { pathMap = buildPathMap(script) } = custom;
     const runAt = getScriptRunAt(script);
     const env = runAt === 'start' || runAt === 'body' ? envStart : envDelayed;
@@ -314,8 +325,16 @@ export function getScriptsByURL(url, isTop, errors) {
     if (meta.grant.some(GMVALUES_RE.test, GMVALUES_RE)) {
       env[VALUE_IDS].push(id);
     }
-    if (!clipboardChecked && meta.grant.some(GMCLIP_RE.test, GMCLIP_RE)) {
-      clipboardChecked = envStart.clipFF = true;
+    if (!clipboardChecked || !xhrChecked) {
+      for (const g of meta.grant) {
+        if (!clipboardChecked && (g === 'GM_setClipboard' || g === 'GM.setClipboard')) {
+          clipboardChecked = envStart.clipFF = true;
+        }
+        if (!xhrChecked && (g === 'GM_xmlhttpRequest' || g === 'GM.xmlHttpRequest'
+        || g === 'GM_download' || g === 'GM.download')) {
+          xhrChecked = envStart.xhr = true;
+        }
+      }
     }
     for (const [list, name, dataUriDecoder] of [
       [meta.require, S_REQUIRE, dataUri2text],
@@ -339,8 +358,15 @@ export function getScriptsByURL(url, isTop, errors) {
       }
     }
     env[SCRIPTS].push(script);
-  });
-  if (!errors) {
+  }
+  testerBatch();
+  if (prevIds) {
+    return allIds;
+  }
+  if (!envStart) {
+    return;
+  }
+  if (isDelayed) {
     envDelayed[PROMISE] = readEnvironmentData(envDelayed);
     return envDelayed;
   }
@@ -421,21 +447,24 @@ export function notifyToOpenScripts(title, text, ids) {
  * @desc Get data for dashboard.
  * @return {Promise<{ scripts: VMScript[], cache: Object }>}
  */
-export async function getData({ ids, sizes }) {
-  const isPopup = ids && !sizes;
-  const scripts = isPopup // the popup may show a subsequently removed script
-    ? ids.map(id => scriptMap[id] || removedScripts.find(r => r.props.id === id)).filter(Boolean)
-    : getScriptsByIdsOrAll(ids);
+export async function getData({ id, ids, sizes }) {
+  if (id) ids = [id];
+  const res = {};
+  const scripts = ids
+    // Some ids shown in popup/editor may have been hard-deleted
+    ? getScriptsByIdsOrAll(ids).filter(Boolean)
+    : getScriptsByIdsOrAll();
   scripts.forEach(inferScriptProps);
-  return {
-    scripts,
-    cache: await getIconCache(scripts),
-    sizes: sizes && getSizes(ids),
-    sync: sizes && commands.SyncGetStates(),
-  };
+  res[SCRIPTS] = scripts;
+  if (sizes) res.sizes = getSizes(ids);
+  if (!id) res.cache = await getIconCache(scripts);
+  if (!id && sizes) res.sync = commands.SyncGetStates();
+  return res;
 }
 
 /**
+ * Returns only own icon and the already cached icons.
+ * The rest are prefetched in background and will be used by loadScriptIcon.
  * @param {VMScript[]} scripts
  * @return {Promise<{}>}
  */
@@ -443,10 +472,10 @@ async function getIconCache(scripts) {
   // data uri for own icon to load it instantly in Chrome when there are many images
   const toGet = [`${ICON_PREFIX}38.png`];
   const toPrime = [];
-  const toResolve = [];
   const res = {};
-  for (let { custom, meta: { icon } } of scripts) {
-    if (isHttpOrHttps(icon)) {
+  for (let { custom, meta } of scripts) {
+    let icon = custom.icon || meta.icon;
+    if (isValidHttpUrl(icon)) {
       icon = custom.pathMap[icon] || icon;
       toGet.push(icon);
       if (!storageCacheHas(S_CACHE_PRE + icon)) toPrime.push(icon);
@@ -455,15 +484,12 @@ async function getIconCache(scripts) {
   if (toPrime.length) {
     await storage[S_CACHE].getMulti(toPrime);
   }
-  for (const url of toGet) {
-    const d = getImageData(url);
-    if (isObject(d)) toResolve.push(d);
-    else { res[url] = d; toResolve.push(0); }
-  }
-  if (toResolve.some(Boolean)) {
-    (await Promise.all(toResolve)).forEach((dataUri, i) => {
-      if (dataUri) res[toGet[i]] = dataUri;
-    });
+  for (let i = 0, d, url; i < toGet.length; i++) {
+    url = toGet[i];
+    d = getImageData(url);
+    if (!isObject(d) || !i && (d = await d)) {
+      res[url] = d;
+    }
   }
   return res;
 }
@@ -578,6 +604,8 @@ export async function parseScript(src) {
     message: src.message == null ? i18n('msgUpdated') : src.message || '',
   };
   const result = { errors, update };
+  const { code } = src;
+  const now = Date.now();
   let { id } = src;
   let script;
   let oldScript = getScript({ id, meta });
@@ -601,7 +629,7 @@ export async function parseScript(src) {
     }
     delete script[INFERRED];
   }
-  props.lastModified = props.lastUpdated = src.lastModified || Date.now();
+  props.lastModified = now;
   props.uuid = props.uuid || getUUID();
   // Overwriting inner data by `src`, deleting keys for which `src` specifies `null`
   for (const key of ['config', 'custom', 'props']) {
@@ -632,14 +660,18 @@ export async function parseScript(src) {
   if (!src.update) storage.mod.remove(getScriptUpdateUrl(script, { all: true }) || []);
   buildPathMap(script, src.url);
   const depsPromise = fetchResources(script, src);
+  // DANGER! Awaiting here when all props are set to avoid modifications made by a "concurrent" call
+  const codeChanged = !oldScript || code !== await storage[S_CODE].getOne(id);
+  if (codeChanged && src.bumpDate) props.lastUpdated = now;
   // Installer has all the deps, so we'll put them in storage first
   if (src.cache) await depsPromise;
   await storage.base.set({
-    [storage[S_SCRIPT].toKey(props.id)]: script,
-    [storage[S_CODE].toKey(props.id)]: src.code,
+    [S_SCRIPT_PRE + id]: script,
+    ...codeChanged && { [S_CODE_PRE + id]: code },
   });
   Object.assign(update, script, src.update);
   result.where = { id };
+  result[S_CODE] = src[S_CODE];
   sendCmd('UpdateScript', result);
   pluginEvents.emit('scriptChanged', result);
   if (src.reloadTab) reloadTabForScript(script);
@@ -667,21 +699,27 @@ function buildPathMap(script, base) {
 
 /** @return {Promise<?string>} resolves to error text if `resourceCache` is absent */
 export async function fetchResources(script, resourceCache, reqOptions) {
-  const { custom: { pathMap }, meta } = script;
-  const snatch = (url, type, validator) => {
+  const { custom, meta } = script;
+  const { pathMap } = custom;
+  const snatch = async (url, type, validator) => {
     if (!url || isDataUri(url)) return;
     url = pathMap[url] || url;
     const contents = resourceCache?.[type]?.[url];
-    return contents != null && !validator
-      ? storage[type].setOne(url, contents) && null
-      : storage[type].fetch(url, reqOptions, validator).catch(err => err);
+    if (contents != null && (!validator || resourceCache?.reuseDeps)) {
+      storage[type].setOne(url, contents);
+      return;
+    }
+    if (!resourceCache || validator || await storage[type].getOne(url) == null) {
+      return storage[type].fetch(url, reqOptions, validator).catch(err => err);
+    }
   };
+  const icon = custom.icon || meta.icon;
   const errors = await Promise.all([
     ...meta.require.map(url => snatch(url, S_REQUIRE)),
     ...Object.values(meta.resources).map(url => snatch(url, S_CACHE)),
-    isRemote(meta.icon) && Promise.race([
+    isRemote(icon) && Promise.race([
       makePause(1000), // ensures slow icons don't prevent installation/update
-      snatch(meta.icon, S_CACHE, validateImage),
+      snatch(icon, S_CACHE, validateImage),
     ]),
   ]);
   if (!resourceCache?.ignoreDepsErrors) {
@@ -772,7 +810,7 @@ export async function vacuum(data) {
   scriptSizes = sizes;
   getScriptsByIdsOrAll().forEach((script) => {
     const { meta, props } = script;
-    const { icon } = meta;
+    const icon = script.custom.icon || meta.icon;
     const { id } = props;
     const pathMap = script.custom.pathMap || buildPathMap(script);
     const updUrls = getScriptUpdateUrl(script, { all: true });

@@ -32,7 +32,6 @@ export const addBackgroundHandlers = addHandlersImpl.bind({}, bgHandlers);
  */
 const bridge = {
   __proto__: null,
-  /** @type {VMBridgeContentIds} */
   [IDS]: createNullObj(),
   cache: createNullObj(),
   pathMaps: createNullObj(),
@@ -45,6 +44,7 @@ const bridge = {
       data = data.data;
     }
     try {
+      if (!handle) throw data;
       if (handle === REIFY) {
         handle = true;
         res = bridge[REIFY];

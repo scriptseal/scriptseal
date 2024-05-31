@@ -5,6 +5,7 @@ import { decodeResource, elemByTag, makeElem, nextTask, sendCmd } from './util';
 const menus = createNullObj();
 const HEAD_TAGS = ['script', 'style', 'link', 'meta'];
 const { toLowerCase } = '';
+const { [IDS]: ids } = bridge;
 let setPopupThrottle;
 let isPopupShown;
 
@@ -62,6 +63,10 @@ export async function sendSetPopup(isDelayed) {
       await setPopupThrottle;
       setPopupThrottle = null;
     }
-    sendCmd('SetPopup', safePickInto({ menus }, bridge, [IDS, INJECT_INTO]));
+    await sendCmd('SetPopup', {
+      [IDS]: ids,
+      [INJECT_INTO]: bridge[INJECT_INTO],
+      menus,
+    });
   }
 }

@@ -2,7 +2,6 @@ import {
   compareVersion, ensureArray, getScriptName, getScriptUpdateUrl, i18n, sendCmd, trueJoin,
 } from '@/common';
 import { __CODE, METABLOCK_RE, NO_CACHE, TIMEOUT_24HOURS, TIMEOUT_MAX } from '@/common/consts';
-import limitConcurrency from '@/common/limit-concurrency';
 import { fetchResources, getScriptById, getScripts, notifyToOpenScripts, parseScript } from './db';
 import { addOwnCommands, commands, init } from './init';
 import { parseMeta } from './script';
@@ -10,7 +9,6 @@ import { getOption, hookOptions, setOption } from './options';
 import { requestNewer } from './storage-fetch';
 
 const processes = {};
-const doCheckUpdateLimited = limitConcurrency(doCheckUpdate, 2, 250);
 const FAST_CHECK = {
   ...NO_CACHE,
   // Smart servers like OUJS send a subset of the metablock without code
@@ -22,23 +20,25 @@ hookOptions(changes => 'autoUpdate' in changes && autoUpdate());
 
 addOwnCommands({
   /**
-   * @param {number | number[]} [id] - when omitted, all scripts are checked
+   * @param {number | number[] | 'auto'} [id] - when omitted, all scripts are checked
    * @return {Promise<number>} number of updated scripts
    */
   async CheckUpdate(id) {
-    const isAuto = !id;
-    const scripts = isAuto ? getScripts() : ensureArray(id).map(getScriptById).filter(Boolean);
+    const isAuto = id === AUTO;
+    const isAll = isAuto || !id;
+    const scripts = isAll ? getScripts() : ensureArray(id).map(getScriptById).filter(Boolean);
     const urlOpts = {
       all: true,
-      auto: isAuto,
-      enabledOnly: isAuto && getOption('updateEnabledScriptsOnly'),
+      allowedOnly: isAll,
+      enabledOnly: isAll && getOption('updateEnabledScriptsOnly'),
     };
+    const opts = { [MULTI]: isAuto ? AUTO : isAll };
     const jobs = scripts.map(script => {
       const curId = script.props.id;
       const urls = getScriptUpdateUrl(script, urlOpts);
       return urls && (
         processes[curId] || (
-          processes[curId] = doCheckUpdateLimited(script, urls, !isAuto)
+          processes[curId] = doCheckUpdate(script, urls, opts)
         )
       );
     }).filter(Boolean);
@@ -53,12 +53,12 @@ addOwnCommands({
         notes.map(n => n.script.props.id),
       );
     }
-    if (isAuto) setOption('lastUpdate', Date.now());
+    if (isAll) setOption('lastUpdate', Date.now());
     return results.reduce((num, r) => num + (r === true), 0);
   },
 });
 
-async function doCheckUpdate(script, urls, force) {
+async function doCheckUpdate(script, urls, opts) {
   const { id } = script.props;
   let res;
   let msgOk;
@@ -67,8 +67,9 @@ async function doCheckUpdate(script, urls, force) {
   try {
     const { update } = await parseScript({
       id,
-      code: await downloadUpdate(script, urls, force),
+      code: await downloadUpdate(script, urls, opts),
       update: { checking: false },
+      bumpDate: true,
     });
     msgOk = i18n('msgScriptUpdated', [getScriptName(update)]);
     resourceOpts = { ...NO_CACHE };
@@ -80,6 +81,7 @@ async function doCheckUpdate(script, urls, force) {
     if (process.env.DEBUG) console.error(update);
   } finally {
     if (resourceOpts) {
+      Object.assign(resourceOpts, opts);
       msgErr = await fetchResources(script, null, resourceOpts);
       if (process.env.DEBUG && msgErr) console.error(msgErr);
     }
@@ -95,7 +97,7 @@ async function doCheckUpdate(script, urls, force) {
   return res;
 }
 
-async function downloadUpdate(script, urls, force) {
+async function downloadUpdate(script, urls, opts) {
   let errorMessage;
   const { meta, props: { id } } = script;
   const [downloadURL, updateURL] = urls;
@@ -103,7 +105,7 @@ async function downloadUpdate(script, urls, force) {
   const result = { update, where: { id } };
   announce(i18n('msgCheckingForUpdate'));
   try {
-    const { data } = await requestNewer(updateURL, FAST_CHECK, force) || {};
+    const { data } = await requestNewer(updateURL, { ...FAST_CHECK, ...opts }) || {};
     const { version, [__CODE]: metaStr } = data ? parseMeta(data, true) : {};
     if (compareVersion(meta.version, version) >= 0) {
       announce(i18n('msgNoUpdate'), { checking: false });
@@ -118,7 +120,7 @@ async function downloadUpdate(script, urls, force) {
       errorMessage = i18n('msgErrorFetchingScript');
       return downloadURL === updateURL && metaStr.trim() !== data.trim()
         ? data
-        : (await requestNewer(downloadURL, NO_CACHE, force)).data;
+        : (await requestNewer(downloadURL, { ...NO_CACHE, ...opts })).data;
     }
   } catch (error) {
     if (process.env.DEBUG) console.error(error);
@@ -144,14 +146,18 @@ function canNotify(script) {
 }
 
 function autoUpdate() {
-  const interval = (+getOption('autoUpdate') || 0) * TIMEOUT_24HOURS;
+  const interval = getUpdateInterval();
   if (!interval) return;
   let elapsed = Date.now() - getOption('lastUpdate');
   if (elapsed >= interval) {
     // Wait on startup for things to settle and after unsuspend for network reconnection
-    setTimeout(commands.CheckUpdate, 20e3);
+    setTimeout(commands.CheckUpdate, 20e3, AUTO);
     elapsed = 0;
   }
   clearTimeout(autoUpdate.timer);
   autoUpdate.timer = setTimeout(autoUpdate, Math.min(TIMEOUT_MAX, interval - elapsed));
+}
+
+export function getUpdateInterval() {
+  return (+getOption('autoUpdate') || 0) * TIMEOUT_24HOURS;
 }

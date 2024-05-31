@@ -25,32 +25,38 @@ addPublicCommands({
   },
 });
 
-async function handleCommandMessage({ cmd, data, [kTop]: mode } = {}, src) {
+function handleCommandMessage({ cmd, data, url, [kTop]: mode } = {}, src) {
   if (init) {
     return init.then(handleCommandMessage.bind(this, ...arguments));
   }
   const func = hasOwnProperty(commands, cmd) && commands[cmd];
-  if (!func) {
-    throw new SafeError(`Unknown command: ${cmd}`);
-  }
+  if (!func) return; // not responding to commands for popup/options
   // The `src` is omitted when invoked via sendCmdDirectly unless fakeSrc is set.
   // The `origin` is Chrome-only, it can't be spoofed by a compromised tab unlike `url`.
-  if (func.isOwn && src && !src.fake
-  && (src.origin ? src.origin !== extensionOrigin : !`${src.url}`.startsWith(extensionRoot))) {
-    throw new SafeError(`Command is only allowed in extension context: ${cmd}`);
+  if (src) {
+    let me = src.origin;
+    if (url) src.url = url; // MessageSender.url doesn't change on soft navigation
+    me = me ? me === extensionOrigin : `${url || src.url}`.startsWith(extensionRoot);
+    if (!me && func.isOwn && !src.fake) {
+      throw new SafeError(`Command is only allowed in extension context: ${cmd}`);
+    }
+    // TODO: revisit when link-preview is shipped in Chrome to fix tabId-dependent functionality
+    if (!src.tab) {
+      if (!me && (IS_FIREFOX ? !func.isOwn : !mode)) {
+        if (process.env.DEBUG) console.log('No src.tab, ignoring:', ...arguments);
+        return;
+      }
+      src.tab = false; // allowing access to props
+    }
+    if (mode) src[kTop] = mode;
   }
-  if (IS_FIREFOX && !func.isOwn && src && !src.tab && !src.url.startsWith(extensionRoot)) {
-    if (process.env.DEBUG) console.log('No src.tab, ignoring:', ...arguments);
-    return;
-  }
-  if (mode && src) {
-    src[kTop] = mode;
-  }
+  return handleCommandMessageAsync(func, data, src);
+}
+
+async function handleCommandMessageAsync(func, data, src) {
   try {
     // `await` is necessary to catch the error here
-    const res = await func(data, src);
-    // `undefined` is not transferable, but `null` is
-    return res ?? null;
+    return await func(data, src);
   } catch (err) {
     if (process.env.DEBUG) console.error(err);
     // Adding `stack` info + in FF a rejected Promise value is transferred only for an Error object

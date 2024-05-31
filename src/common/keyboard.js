@@ -1,4 +1,5 @@
 import { KeyboardService } from '@violentmonkey/shortcut';
+import { getActiveElement } from '@/common/ui';
 
 export * from '@violentmonkey/shortcut';
 
@@ -38,8 +39,7 @@ function bindKeys() {
   addEventListener('focus', handleFocus, true);
   addEventListener('blur', handleBlur, true);
   keyboardService.register('enter', () => {
-    const { activeElement } = document;
-    activeElement.click();
+    getActiveElement().click();
   }, {
     condition: '!inputFocus',
   });
@@ -56,7 +56,7 @@ export function handleTabNavigation(dir) {
     const rect = el.getBoundingClientRect();
     return rect.width > 0 && rect.height > 0;
   });
-  let index = els.indexOf(document.activeElement);
+  let index = els.indexOf(getActiveElement());
   index = (index + dir + els.length) % els.length;
   els[index].focus();
 }

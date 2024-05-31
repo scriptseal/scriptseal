@@ -31,16 +31,21 @@ export const bindEvents = (srcId, destId, bridge) => {
     }
     if (!incomingNodeEvent) {
       // CustomEvent is the main message
-      const detail = e::getDetail();
-      const data = cloneInto ? cloneInto(detail, window) : detail;
-      incomingNodeEvent = data.node && data;
-      if (!incomingNodeEvent) bridge.onHandle(data);
+      // but if the previous message was non-cloneable we will throw if MouseEvent is next
+      try { e = e::getDetail(); } catch (err) { return; }
+      if (!e) {
+        e = createNullObj();
+        e.data = `[${VIOLENTMONKEY}] Non-cloneable property e.g. a DOM node or function.`;
+      }
+      if (cloneInto) e = cloneInto(e, window);
+      if (e.node && (incomingNodeEvent = e)) return;
     } else {
       // MouseEvent is the second event when the main event has `node: true`
       incomingNodeEvent.node = e::getRelatedTarget();
-      bridge.onHandle(incomingNodeEvent);
-      incomingNodeEvent = null;
+      e = incomingNodeEvent;
+      incomingNodeEvent = null; // must precede onHandle() to handle nested incoming event
     }
+    bridge.onHandle(e);
   }, true);
   /** In Content bridge `pageNode` is `realm` which is wired in setupContentInvoker */
   bridge.post = (cmd, data, pageNode, contNode) => {

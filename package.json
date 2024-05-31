@@ -1,7 +1,7 @@
 {
   "name": "violentmonkey",
   "description": "Violentmonkey",
-  "version": "2.18.0",
+  "version": "2.19.0",
   "scripts": {
     "prepare": "husky install",
     "dev": "gulp dev",
@@ -74,7 +74,7 @@
     "postcss-scss": "^4.0.4",
     "postcss-simple-vars": "^6.0.3",
     "prettier": "^3.0.2",
-    "sharp": "^0.31.0",
+    "sharp": "^0.32.6",
     "style-loader": "^3.3.3",
     "svg-sprite-loader": "^6.0.11",
     "terser-webpack-plugin": "^5.3.9",

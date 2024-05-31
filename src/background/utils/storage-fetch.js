@@ -2,8 +2,11 @@ import { isDataUri, makeRaw, request } from '@/common';
 import { NO_CACHE } from '@/common/consts';
 import limitConcurrency from '@/common/limit-concurrency';
 import storage from './storage';
+import { getUpdateInterval } from './update';
 
-const requestLimited = limitConcurrency(request, 4);
+const requestLimited = limitConcurrency(request, 4, 100, 1000,
+  url => url.split('/')[2] // simple extraction of the `host` part
+);
 
 storage.cache.fetch = cacheOrFetch({
   init(options) {
@@ -53,12 +56,23 @@ function cacheOrFetch(handlers = {}) {
   }
 }
 
-export async function requestNewer(url, opts, force) {
+/**
+ * @param {string} url
+ * @param {VMReq.OptionsMulti} [opts]
+ * @return {Promise<VMReq.Response> | void}
+ */
+export async function requestNewer(url, opts) {
   if (isDataUri(url)) {
     return;
   }
-  const modOld = !force && await storage.mod.getOne(url);
-  for (const get of force ? [1] : [0, 1]) {
+  let multi, modOld, modDate;
+  if (opts && (multi = opts[MULTI]) && isObject(modOld = await storage.mod.getOne(url))) {
+    [modOld, modDate] = modOld;
+  }
+  if (multi === AUTO && modDate > Date.now() - getUpdateInterval()) {
+    return;
+  }
+  for (const get of multi ? [0, 1] : [1]) {
     if (modOld || get) {
       const req = await requestLimited(url,
         get ? opts
@@ -73,7 +87,7 @@ export async function requestNewer(url, opts, force) {
         return;
       }
       if (get) {
-        if (mod) storage.mod.setOne(url, mod);
+        if (mod) storage.mod.setOne(url, [mod, Date.now()]);
         else if (modOld) storage.mod.remove(url);
         return req;
       }

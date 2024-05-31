@@ -80,7 +80,7 @@ buttonReset:
   message: Resetează
 buttonResetSettings:
   description: Button in settings page to reset all settings
-  message: ''
+  message: Resetează setările
 buttonRestore:
   description: Button to restore a removed script.
   message: Restaurează
@@ -131,7 +131,9 @@ confirmUndoImport:
   description: >-
     Tooltip of the Undo button after importing a zip in settings. The same text
     is also shown as a confirmation dialog after clicking this button.
-  message: ''
+  message: >-
+    Revocă toate modificările efectuate în baza de date (importare, actualizare,
+    editare, personalizare)
 descBlacklist:
   description: HTML Description for the global blacklist.
   message: Scripturile nu vor fi injectate în URL-urile corespondente acestei liste.
@@ -149,9 +151,28 @@ descEditorOptions:
     că unele dintre ele pot să nu funcționeze în Violentmonkey. Vezi <a
     href="https://codemirror.net/doc/manual.html#config" target="_blank"
     rel="noopener noreferrer">lista completă</a>.
+descEditorOptionsGeneric:
+  description: Description of editor options in VM settings.
+  message: >-
+    Opțiunile de tip boolean pot fi comutate dând dublu clic pe valoare:
+    <code>true</code> = activat, <code>false</code> = dezactivat. Opțiunile
+    numerice care se termină cu <code>Delay</code>, <code>Interval</code>,
+    <code>Rate</code>, <code>Time</code> sunt exprimate în milisecunde.
+descEditorOptionsVM:
+  description: Description of nonstandard editor options in VM settings.
+  message: >-
+    Opțiuni nestandardizate: <code>autocompleteOnTyping</code> este o întârziere
+    în milisecunde pentru afișarea sugestiilor de completare automată după ce
+    tastezi (<code>0</code> = dezactivat), <code>killTrailingSpaceOnSave</code>
+    elimină automat spațiile sfârșiturilor liniilor în fiecare linie atunci când
+    salvezi, <code>showTrailingSpace</code> afișează spațiile sfârșiturilor
+    liniilor sub formă de puncte.
 descScriptTemplate:
   description: Description of script template section.
-  message: ''
+  message: >-
+    Variabile suportate: <{{{name}}>>, <{{{url}}>, <{{{date}}>,
+    <{{{date:format}}> cu un format compatibil cu MomentJS, de exemplu
+    <{{date:YYYY-MM-DD}}>.
 editHelpDocumention:
   description: Label in the editor help tab for the documentation link.
   message: >-
@@ -171,12 +192,12 @@ editLabelSettings:
   message: Setări pentru script
 editLongLine:
   description: Shown in the editor in lines that were cut due to being too long
-  message: Rândul este prea lung
+  message: Linia este prea lungă
 editLongLineTooltip:
   description: Tooltip shown in the editor in lines that were cut due to being too long
   message: >-
-    Acest rând este prea lung, astfel că textul acestuia este restrâns pentru a
-    evita întârzierile la editare.
+    Această linie este prea lungă, astfel că textul acesteia este restrâns
+    pentru a evita întârzierile la editare.
 
     Poți ajusta limita în setările avansate, de exemplu:
 
@@ -215,6 +236,9 @@ failureReasonNoninjectable:
 
     (exemple uzuale: interfața de utilizator a browserului, o extensie, blocat
     via politici, un site al unui motor de căutare în Opera)
+failureReasonRestarted:
+  description: Shown in the popup.
+  message: ''
 fileInstallBlocked:
   description: Text in the installer when a local file is dropped into the browser window.
   message: >-
@@ -261,12 +285,18 @@ genericOn:
 genericUseGlobal:
   description: To indicate some per-script option will use its analog in global settings.
   message: folosește setarea globală
+hashPatternWarning:
+  description: Warning shown in the editor, $1 is the pattern(s).
+  message: ''
 headerRecycleBin:
   description: Text shown in the header when scripts in recycle bin are listed.
   message: Coș de reciclare
 helpForLocalFile:
   description: Label of the checkbox.
   message: Afișează instrucțiunile pentru scripturile locale trase și plasate
+hintForBatchAction:
+  description: Hint shown next to the buttons for batch actions.
+  message: pentru $1 scripturi coincidente
 hintInputURL:
   description: Hint for a prompt box to input URL of a user script.
   message: 'Introdu URL-ul:'
@@ -331,7 +361,7 @@ labelBackup:
   touched: false
 labelBackupMaintenance:
   description: Label of the import/export/maintenance section in settings.
-  message: ''
+  message: Backup și mentenanță
 labelBadge:
   description: Label for option to show number on badge.
   message: 'Afișează pe insignă: '
@@ -452,7 +482,7 @@ labelLastUpdatedAt:
   message: Ultima actualizare în $1
 labelLineNumber:
   description: Label for line number jumper.
-  message: 'Rândul nr.: '
+  message: 'Linia nr.: '
 labelMatch:
   description: Label of @match rules.
   message: Reguli @match
@@ -560,7 +590,7 @@ labelSyncUsername:
   message: 'Nume de utilizator: '
 labelTags:
   description: Label for custom tags.
-  message: ''
+  message: 'Taguri (separate prin spații):'
 labelTheme:
   description: Label for the visual theme option.
   message: 'Temă:'
@@ -752,7 +782,7 @@ msgNoUpdate:
   message: Nu au fost găsite actualizări.
 msgOpenUpdateErrors:
   description: Shown at the beginning of a notification (Chrome) or in its title (Firefox).
-  message: Eroare la actualizarea scripturilor. Dă click pentru a le deschide.
+  message: Eroare la actualizarea scripturilor. Dă clic pentru a le deschide.
 msgReinstallScripts:
   description: >-
     Notification body shown for a missing @require or other resource when
@@ -804,6 +834,9 @@ msgSyncing:
 msgSyntaxError:
   description: Shown in popup when a script didn't run and we don't know the exact reason.
   message: Eroare de sintaxă?
+msgTardyMatch:
+  description: Shown in popup for scripts that missed their chance to run.
+  message: ''
 msgUpdated:
   description: Message shown when a script is updated/reinstalled.
   message: Script actualizat.
@@ -892,9 +925,11 @@ reloadTabTrackHint:
 removeAllScripts:
   description: Button to remove all scripts
   message: ''
+  touched: false
 removeAllScriptsConfirm:
   description: Confirmation shown after clicking the `Remove all scripts` button.
   message: ''
+  touched: false
 searchCaseSensitive:
   description: Option to perform a case-sensitive search
   message: Sensibil la scrierea cu litere mari și mici
@@ -939,7 +974,25 @@ titleSearchHintV2:
   description: >-
     Hover title for search icon in dashboard. Do not translate content between
     <code>...</code>.
-  message: ''
+  message: >-
+    * Tasta <kbd>Enter</kbd> adaugă textul în istoricul de completare automată
+
+    * Toate condițiile nu fac distincție între majuscule și minuscule
+
+    * Condițiile separate prin spațiu pot fi combinate
+
+    * Caută după metadate: <code>"Awesome Script" "Description"</code>
+
+    * Caută după taguri: <code>#tag1 #tag2</code>
+
+    * Caută după numele unui script: <code>name:"awesome name"</code>
+
+    * Caută după codul unui script: code: "awesome code"
+
+    * Caută excluzând anumite rezultate: <code>!#tag2 !name:"unwanted"</code>
+
+    * Expresii regulate: <code>/\w+?/</code>, <code>/\w+?/gi</code>,
+    <code>name:/\w+?/</code>, <code>name+re:"\w+? with space"</code>
 trackEdits:
   description: Button in a script installation dialog.
   message: Urmărește editările externe

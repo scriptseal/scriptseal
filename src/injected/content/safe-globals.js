@@ -29,7 +29,7 @@ export const createNullObj = Object.create.bind(Object, null); // 25 calls
 export const SafeError = Error;
 export const ResponseProto = SafeResponse[PROTO];
 export const hasOwnProperty = safeApply.call.bind(({}).hasOwnProperty);
-export const { forEach, includes } = []; // `push` is unsafe as it may call a setter; use safePush()
+export const { forEach, includes, map } = []; // `push` is unsafe as it may call a setter; use safePush()
 export const { then } = SafePromise[PROTO];
 export const { indexOf: stringIndexOf, slice } = '';
 export const safeCharCodeAt = safeApply.call.bind(''.charCodeAt); // faster than str::charCodeAt
@@ -39,6 +39,7 @@ export const {
   defineProperty,
   getOwnPropertyDescriptor: describeProperty,
   getPrototypeOf,
+  setPrototypeOf,
   keys: objectKeys,
 } = Object;
 export const { random: mathRandom } = Math;
@@ -64,4 +65,8 @@ export const { getElementsByTagName } = document;
 export const REIFY = 'reify';
 export let IS_FIREFOX = global !== window; // true in Firefox content script context
 /** @type {VMTopRenderMode} */
-export let topRenderMode = window !== top ? 0 : document.prerendering ? 2 : 1;
+export let topRenderMode = window !== top ? 0
+  // TODO: revisit when link-preview is shipped in Chrome
+  : document.prerendering && document.visibilityState === 'hidden' ? 2
+    : 1;
+

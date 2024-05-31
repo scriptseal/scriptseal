@@ -1,5 +1,6 @@
-import bridge, { addBackgroundHandlers, addHandlers } from './bridge';
-import { makeElem, sendCmd } from './util';
+import bridge, { addBackgroundHandlers, addHandlers, onScripts } from './bridge';
+import { sendCmd } from './util';
+import { UA_PROPS } from '../util';
 
 const {
   fetch: safeFetch,
@@ -7,7 +8,6 @@ const {
   FormData: SafeFormData,
 } = global;
 const { arrayBuffer: getArrayBuffer, blob: getBlob } = ResponseProto;
-const { createObjectURL, revokeObjectURL } = URL;
 const BlobProto = SafeBlob[PROTO];
 const getBlobType = describeProperty(BlobProto, 'type').get;
 const getTypedArrayBuffer = describeProperty(getPrototypeOf(SafeUint8Array[PROTO]), 'buffer').get;
@@ -15,13 +15,31 @@ const getReaderResult = describeProperty(SafeFileReader[PROTO], 'result').get;
 const readAsDataURL = SafeFileReader[PROTO].readAsDataURL;
 const fdAppend = SafeFormData[PROTO].append;
 const CHUNKS = 'chunks';
-const PROPS_TO_COPY = [
-  kFileName,
-  kXhrType,
-];
+const LOAD = 'load';
+const LOADEND = 'loadend';
+const isBlobXhr = req => req[kXhrType] === 'blob';
 /** @type {GMReq.Content} */
 const requests = createNullObj();
-let downloadChain = promiseResolve();
+let navigator, getUAData, getUAProps;
+
+onScripts.push(data => {
+  if (data.xhr) {
+    // The tab may have a different UA due to a devtools override or about:config
+    navigator = global.navigator;
+    getUAProps = UA_PROPS;
+    for (let p = getPrototypeOf(navigator), i = 0; i < getUAProps.length; i++) {
+      getUAProps[i] = p && describeProperty(p, getUAProps[i]).get;
+      if (!i) {
+        if ((p = describeProperty(p, 'userAgentData'))) {
+          getUAData = p.get;
+          p = global.NavigatorUAData[PROTO];
+        } else {
+          getUAProps.length = 1;
+        }
+      }
+    }
+  }
+});
 
 // TODO: extract all prop names used across files into consts.js to ensure sameness
 addHandlers({
@@ -31,16 +49,26 @@ addHandlers({
    * @returns {Promise<void>}
    */
   async HttpRequest(msg, realm) {
-    requests[msg.id] = safePickInto({
-      realm,
-    }, msg, PROPS_TO_COPY);
-    let { data } = msg;
-    // In Firefox we recreate FormData in bg::decodeBody
-    if (!IS_FIREFOX && data.length > 1 && data[1] !== 'usp') {
-      // TODO: support huge data by splitting it to multiple messages
-      data = await encodeBody(data[0], data[1]);
-      msg.data = cloneInto ? cloneInto(data, msg) : data;
+    if (IS_FIREFOX) msg = nullObjFrom(msg); // copying into our realm to set its props freely
+    else setPrototypeOf(msg, null);
+    const { url } = msg;
+    const data = !IS_FIREFOX && msg.data;
+    const uaData = getUAData && navigator::getUAData();
+    const sch = url::slice(0, 5);
+    if (sch === 'data:' || sch === 'blob:') {
+      return requestVirtualUrl(msg, url, realm);
     }
+    requests[msg.id] = {
+      __proto__: null,
+      realm,
+      [kXhrType]: msg[kXhrType],
+    };
+    // In Firefox we recreate FormData in bg::decodeBody
+    if (data && data.length > 1 && data[1] !== 'usp') {
+      // TODO: support huge data by splitting it to multiple messages
+      msg.data = await encodeBody(data[0], data[1]);
+    }
+    msg.ua = getUAProps::map((fn, i) => (!i ? navigator : uaData)::fn());
     return sendCmd('HttpRequest', msg);
   },
   AbortRequest: true,
@@ -65,12 +93,13 @@ addBackgroundHandlers({
     let response = data?.[kResponse];
     if (response != null) {
       if (msg.blobbed) {
-        response = await importBlob(req, response);
+        response = await importBlob(response, isBlobXhr(req));
+        sendCmd('RevokeBlob', response);
       } else if (msg.chunked) {
         processChunk(req, response);
         response = req[CHUNKS];
         delete req[CHUNKS];
-        if (req[kXhrType] === 'blob') {
+        if (isBlobXhr(req)) {
           response = new SafeBlob([response], { type: msg.contentType });
         } else if (req[kXhrType]) {
           response = response::getTypedArrayBuffer();
@@ -80,49 +109,55 @@ addBackgroundHandlers({
       }
       data[kResponse] = response;
     }
-    if (response && req[kFileName]) {
-      req[kResponse] = response;
-    }
-    if (msg.type === 'load' && req[kFileName]) {
-      await downloadBlob(req[kResponse], req[kFileName]);
-    }
-    if (msg.type === 'loadend') {
+    if (msg.type === LOADEND) {
       delete requests[msg.id];
     }
-    bridge.post('HttpRequested', msg, req.realm);
+    sendHttpRequested(msg, req.realm);
   },
 });
 
+async function requestVirtualUrl(msg, url, realm) {
+  let data, eventLoad;
+  const { events, [kFileName]: fileName } = msg;
+  const wantsData = (eventLoad = events::includes(LOAD)) || events::includes(LOADEND);
+  if (wantsData || fileName && IS_FIREFOX) {
+    data = await importBlob(url, isBlobXhr(msg));
+  }
+  if (fileName) {
+    // download in bg to a) circumvent CSP in Firefox and b) use a single throttled download chain
+    sendCmd('DownloadBlob', [IS_FIREFOX ? data : url, fileName]);
+    data = null;
+  }
+  for (;;) {
+    msg = {
+      id: msg.id,
+      type: eventLoad ? LOAD : LOADEND,
+      data: {
+        finalUrl: url,
+        readyState: 4,
+        status: 200,
+        [kResponse]: data,
+        [kResponseHeaders]: '',
+      },
+    };
+    sendHttpRequested(msg, realm);
+    if (eventLoad) eventLoad = data = null;
+    else break;
+  }
+}
+
+function sendHttpRequested(msg, realm) {
+  bridge.post('HttpRequested', msg, realm);
+}
+
 /**
  * Only a content script can read blobs from an extension:// URL
- * @param {GMReq.Content} req
  * @param {string} url
+ * @param {boolean} isBlob
  * @returns {Promise<Blob|ArrayBuffer>}
  */
-async function importBlob(req, url) {
-  const data = await (await safeFetch(url))::(req[kXhrType] === 'blob' ? getBlob : getArrayBuffer)();
-  sendCmd('RevokeBlob', url);
-  return data;
-}
-
-function downloadBlob(blob, fileName) {
-  const url = createObjectURL(blob);
-  const a = makeElem('a', {
-    href: url,
-    download: fileName,
-  });
-  const res = downloadChain::then(() => {
-    a::fire(new SafeMouseEvent('click'));
-    revokeBlobAfterTimeout(url);
-  });
-  // Frequent downloads are ignored in Chrome and possibly other browsers
-  downloadChain = res::then(() => sendCmd('SetTimeout', 150));
-  return res;
-}
-
-async function revokeBlobAfterTimeout(url) {
-  await sendCmd('SetTimeout', 3000);
-  revokeObjectURL(url);
+async function importBlob(url, isBlob) {
+  return (await safeFetch(url))::(isBlob ? getBlob : getArrayBuffer)();
 }
 
 /**
@@ -157,7 +192,7 @@ async function encodeBody(body, mode) {
   const blob = wasBlob ? body : await new SafeResponse(body)::getBlob();
   const reader = new SafeFileReader();
   return new SafePromise(resolve => {
-    reader::on('load', () => resolve([
+    reader::on(LOAD, () => resolve([
       reader::getReaderResult(),
       blob::getBlobType(),
       wasBlob,

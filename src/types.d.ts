@@ -18,7 +18,7 @@ declare interface GMContext {
   id: number;
   resCache: StringMap;
   resources: StringMap;
-  script: VMInjection.Script;
+  displayName: string;
 }
 
 /**
@@ -31,6 +31,8 @@ declare namespace GMReq {
   interface BG {
     cb: (data: GMReq.Message.BGAny) => Promise<void>;
     coreId: number;
+    /** Firefox-only workaround for CSP blocking a blob: URL */
+    fileName: string;
     frame: VMMessageTargetFrame;
     frameId: number;
     id: string;
@@ -97,6 +99,7 @@ declare namespace GMReq {
       password?: string;
       responseType: XMLHttpRequestResponseType;
       timeout?: number;
+      ua?: string[];
       url: string;
       user?: string;
       /** responseType to use in the actual XHR */
@@ -153,6 +156,7 @@ declare namespace VMScript {
     homepageURL?: string;
     lastInstallURL?: string;
     updateURL?: string;
+    icon?: string;
     injectInto?: VMScriptInjectInto;
     noframes?: NumBoolNull;
     exclude?: string[];
@@ -165,6 +169,7 @@ declare namespace VMScript {
     origMatch: boolean;
     pathMap?: StringMap;
     runAt?: VMScriptRunAt;
+    tags?: string;
   }
   type Meta = {
     description?: string;
@@ -204,14 +209,18 @@ declare interface VMInjectionDisabled {
   expose: string | false;
 }
 
+declare interface VMInjectionFlags {
+  clipFF?: boolean;
+  forceContent?: boolean;
+  xhr?: boolean;
+}
+
 /**
  * Injection data sent to the content bridge when injection is enabled
  */
-declare interface VMInjection extends VMInjectionDisabled {
+declare interface VMInjection extends VMInjectionDisabled, VMInjectionFlags {
   cache: StringMap;
-  clipFF?: boolean;
   errors: string[];
-  forceContent?: boolean;
   /** content bridge adds the actually running ids and sends via SetPopup */
   ids: number[];
   info: VMInjection.Info;
@@ -244,10 +253,8 @@ declare namespace VMInjection {
     value: { [scriptId: string]: StringMap };
     valueIds: number[];
   }
-  interface EnvStart extends Env {
+  interface EnvStart extends Env, VMInjectionFlags {
     allIds: { [id: string]: NumBool };
-    clipFF?: boolean;
-    forceContent?: boolean;
     more: EnvDelayed;
     /** `null` = env was processed and contains data now */
     promise: Promise<EnvStart>;
@@ -309,6 +316,10 @@ declare namespace VMReq {
   interface Options extends RequestInit {
     /** @implements XMLHttpRequestResponseType */
     responseType?: '' | 'arraybuffer' | 'blob' | 'json' | 'text';
+  }
+  interface OptionsMulti extends Options {
+    /** truthy = multi script update, 'auto' = autoUpdate, falsy = single */
+    multi?: boolean | 'auto';
   }
   interface Response {
     url: string;

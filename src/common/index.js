@@ -2,7 +2,7 @@
 
 import { browser, HOMEPAGE_URL, INFERRED, RUN_AT_RE, SUPPORT_URL } from './consts';
 import { deepCopy } from './object';
-import { blob2base64, i18n, isDataUri } from './util';
+import { blob2base64, i18n, isDataUri, tryUrl } from './util';
 
 export { normalizeKeys } from './object';
 export * from './util';
@@ -26,7 +26,7 @@ export const nullBool2string = v => v ? '1' : v == null ? '' : '0';
 const BAD_URL_CHAR = /[#/?]/g;
 /** Fullwidth range starts at 0xFF00, normal range starts at space char code 0x20 */
 const replaceWithFullWidthForm = s => String.fromCharCode(s.charCodeAt(0) - 0x20 + 0xFF00);
-const PORT_ERROR_RE = /(Receiving end does not exist)|The message port closed before|$/;
+const PORT_ERROR_RE = /(Receiving end does not exist)|The message port closed before|moved into back\/forward cache|$/;
 
 export function initHooks() {
   const hooks = new Set();
@@ -183,6 +183,18 @@ export function getScriptSupportUrl(script) {
   return script.meta[SUPPORT_URL] || script[INFERRED]?.[SUPPORT_URL];
 }
 
+/**
+ * @param {VMScript} script
+ * @returns {string}
+ */
+export function getScriptIcon(script) {
+  return script.custom.icon || script.meta.icon;
+}
+
+/**
+ * @param {VMScript} script
+ * @returns {string}
+ */
 export function getScriptName(script) {
   return script.custom.name || getLocaleString(script.meta, 'name')
     || `#${script.props.id ?? i18n('labelNoName')}`;
@@ -212,12 +224,12 @@ export function getScriptPrettyUrl(script, displayName) {
  * @param {VMScript} script
  * @param {Object} [opts]
  * @param {boolean} [opts.all] - to return all two urls [checkUrl, downloadUrl]
- * @param {boolean} [opts.auto] - auto-update mode: check shouldUpdate
+ * @param {boolean} [opts.allowedOnly] - check shouldUpdate
  * @param {boolean} [opts.enabledOnly]
  * @return {string[] | string}
  */
-export function getScriptUpdateUrl(script, { all, auto, enabledOnly } = {}) {
-  if ((!auto || script.config.shouldUpdate)
+export function getScriptUpdateUrl(script, { all, allowedOnly, enabledOnly } = {}) {
+  if ((!allowedOnly || script.config.shouldUpdate)
   && (!enabledOnly || script.config.enabled)) {
     const { custom, meta } = script;
     /* URL in meta may be set to an invalid value to enforce disabling of the automatic updates
@@ -283,17 +295,6 @@ export function makePause(ms) {
 
 export function trueJoin(separator) {
   return this.filter(Boolean).join(separator);
-}
-
-/** @returns {string|undefined} */
-export function tryUrl(str) {
-  try {
-    if (str && new URL(str)) {
-      return str; // throws on invalid urls
-    }
-  } catch (e) {
-    // undefined
-  }
 }
 
 /**

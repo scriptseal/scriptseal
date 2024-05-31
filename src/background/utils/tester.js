@@ -1,5 +1,5 @@
 /* eslint-disable max-classes-per-file */
-import { getScriptPrettyUrl } from '@/common';
+import { escapeStringForRegExp, getScriptPrettyUrl } from '@/common';
 import { BLACKLIST, BLACKLIST_ERRORS } from '@/common/consts';
 import initCache from '@/common/cache';
 import { getPublicSuffix } from '@/common/tld';
@@ -86,19 +86,17 @@ export class MatchTest {
    * @throws {string}
    */
   static try(rule) {
-    const parts = rule.match(RE_MATCH_PARTS);
+    let parts = rule.match(RE_MATCH_PARTS);
     if (parts) return new MatchTest(...parts);
     if (rule === '<all_urls>') return matchAlways; // checking it second as it's super rare
-    throw `Bad pattern: ${MatchTest.fail(rule)} in ${rule}`;
-  }
-
-  static fail(rule) {
-    const parts = rule.match(RE_MATCH_BAD);
-    return (
+    // Report failed parts in detail
+    parts = rule.match(RE_MATCH_BAD);
+    parts = !parts ? '' : (
       (parts[3] != null ? `${parts[3] ? 'unknown' : 'missing'} scheme, ` : '')
       + (parts[4] !== '://' ? 'missing "://", ' : '')
       || (parts[6] == null ? 'missing "/" for path, ' : '')
-    ).slice(0, -2);
+    ).slice(0, -2) + ' in ';
+    throw `Bad pattern: ${parts}${rule}`;
   }
 }
 
@@ -234,7 +232,7 @@ function testRules(url, script, ...list) {
 }
 
 function str2RE(str) {
-  return str.replace(/[.?+[\]{}()|^$]/g, '\\$&').replace(/\*/g, '.*?');
+  return escapeStringForRegExp(str).replace(/\*/g, '.*?');
 }
 
 function autoReg(str) {

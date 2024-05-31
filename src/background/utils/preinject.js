@@ -4,7 +4,9 @@ import {
   BLACKLIST, HOMEPAGE_URL, KNOWN_INJECT_INTO, META_STR, METABLOCK_RE, NEWLINE_END_RE,
 } from '@/common/consts';
 import initCache from '@/common/cache';
-import { deepCopy, forEachEntry, forEachValue, mapEntry, objectSet } from '@/common/object';
+import {
+  deepCopy, forEachEntry, forEachValue, mapEntry, objectPick, objectSet,
+} from '@/common/object';
 import { CACHE_KEYS, getScriptsByURL, PROMISE, REQ_KEYS, VALUE_IDS } from './db';
 import { setBadge } from './icon';
 import { addOwnCommands, addPublicCommands } from './init';
@@ -151,6 +153,7 @@ addPublicCommands({
     let skip = skippedTabs[tabId];
     if (skip > 0) { // first time loading the tab after skipScripts was invoked
       if (isTop) skippedTabs[tabId] = -1; // keeping a phantom for future iframes in this page
+      if (popupTabs[tabId]) sendPopupShown(tabId, frameDoc);
       return { [INJECT_INTO]: SKIP_SCRIPTS };
     }
     if (skip) delete skippedTabs[tabId]; // deleting the phantom as we're in a new page
@@ -165,7 +168,7 @@ addPublicCommands({
       addValueOpener(scripts, tabId, frameDoc);
     }
     if (popupTabs[tabId]) {
-      setTimeout(sendTabCmd, 0, tabId, 'PopupShown', true, getFrameDocIdAsObj(frameDoc));
+      sendPopupShown(tabId, frameDoc);
     }
     return isApplied
       ? !done && inject
@@ -389,16 +392,18 @@ async function prepareBag(cacheKey, url, isTop, env, inject, errors) {
   const { allIds, [MORE]: envDelayed } = env;
   const moreKey = envDelayed[IDS].length && getUniqId('more');
   Object.assign(inject, {
-    [S_CACHE]: env[S_CACHE],
     [SCRIPTS]: prepareScripts(env),
     [INJECT_INTO]: injectInto,
     [MORE]: moreKey,
     [kSessionId]: sessionId,
     [IDS]: allIds,
-    clipFF: env.clipFF,
     info: { ua },
     errors: errors.filter(err => allIds[err.split('#').pop()]).join('\n'),
-  });
+  }, objectPick(env, [
+    S_CACHE,
+    'clipFF',
+    'xhr',
+  ]));
   propsToClear::forEachValue(val => {
     if (val !== true) bag[val] = env[val];
   });
@@ -651,4 +656,8 @@ function checkVivaldi(tab) {
   if (tab.vivExtData/*new*/ || tab.extData/*old*/) {
     ua.brand = ua.browserBrand = 'Vivaldi';
   }
+}
+
+function sendPopupShown(tabId, frameDoc) {
+  setTimeout(sendTabCmd, 0, tabId, 'PopupShown', true, getFrameDocIdAsObj(frameDoc));
 }

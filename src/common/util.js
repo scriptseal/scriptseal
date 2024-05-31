@@ -228,6 +228,7 @@ export async function requestLocalFile(url, options = {}) {
       headers: {
         get: name => xhr.getResponseHeader(name),
       },
+      url,
     };
     const { [kResponseType]: responseType } = options;
     xhr.open('GET', url, true);
@@ -243,11 +244,7 @@ export async function requestLocalFile(url, options = {}) {
           // ignore invalid JSON
         }
       }
-      if (result.status > 300) {
-        reject(result);
-      } else {
-        resolve(result);
-      }
+      resolve(result);
     };
     xhr.onerror = () => {
       result.status = -1;
@@ -273,8 +270,19 @@ const isLocalUrlRe = re`/^(
     (:\d+|\/|$)
 )/ix`;
 export const isDataUri = url => /^data:/i.test(url);
-export const isHttpOrHttps = url => /^https?:\/\//i.test(url);
+export const isValidHttpUrl = url => /^https?:\/\//i.test(url) && tryUrl(url);
 export const isRemote = url => url && !isLocalUrlRe.test(decodeURI(url));
+
+/** @returns {string|undefined} */
+export function tryUrl(str) {
+  try {
+    if (str && new URL(str)) {
+      return str; // throws on invalid urls
+    }
+  } catch (e) {
+    // undefined
+  }
+}
 
 /**
  * Make a request.
@@ -283,7 +291,7 @@ export const isRemote = url => url && !isLocalUrlRe.test(decodeURI(url));
  * @return {Promise<VMReq.Response>}
  */
 export async function request(url, options = {}) {
-  // fetch does not support local file
+  // fetch supports file:// since Chrome 99 but we use XHR for consistency
   if (url.startsWith('file:')) return requestLocalFile(url, options);
   const { body, headers, [kResponseType]: responseType } = options;
   const isBodyObj = body && body::({}).toString() === '[object Object]';
@@ -341,4 +349,8 @@ export function dumpScriptValue(value, jsonDump = JSON.stringify) {
 
 export function normalizeTag(tag) {
   return tag.replace(/[^\w.-]/g, '');
+}
+
+export function escapeStringForRegExp(str) {
+  return str.replace(/[\\.?+[\]{}()|^$]/g, '\\$&');
 }

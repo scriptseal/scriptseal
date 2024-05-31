@@ -77,30 +77,87 @@
     />
     </keep-alive>
 
-    <div v-if="errors" class="errors shelf my-1c">
+    <div v-if="errors || hashPattern" class="errors shelf my-1c">
+      <locale-group v-if="hashPattern" i18n-key="hashPatternWarning">
+        <code v-text="hashPattern"/>
+      </locale-group>
       <p v-for="e in errors" :key="e" v-text="e" class="text-red"/>
-      <p class="my-1">
+      <p class="my-1" v-if="errors">
         <a :href="urlMatching" target="_blank" rel="noopener noreferrer" v-text="urlMatching"/>
       </p>
     </div>
   </div>
 </template>
 
-<script setup>
-import { computed, nextTick, onActivated, onDeactivated, onMounted, ref, watch } from 'vue';
+<script>
 import {
   browserWindows,
   debounce, formatByteLength, getScriptName, getScriptUpdateUrl, i18n, isEmpty,
   nullBool2string, sendCmdDirectly, trueJoin,
 } from '@/common';
 import { deepCopy, deepEqual, objectPick } from '@/common/object';
-import { externalEditorInfoUrl, focusMe, showMessage } from '@/common/ui';
+import { externalEditorInfoUrl, focusMe, getActiveElement, showMessage } from '@/common/ui';
 import { keyboardService } from '@/common/keyboard';
-import VmCode from '@/common/ui/code';
-import VmExternals from '@/common/ui/externals';
 import options from '@/common/options';
 import { getUnloadSentry } from '@/common/router';
-import { store } from '../../utils';
+import {
+  kDownloadURL, kExclude, kExcludeMatch, kHomepageURL, kIcon, kInclude, kMatch, kName, kOrigExclude,
+  kOrigExcludeMatch, kOrigInclude, kOrigMatch, kUpdateURL,
+} from '../../utils';
+
+const urlMatching = 'https://violentmonkey.github.io/api/matching/';
+const CUSTOM_PROPS = {
+  [kName]: '',
+  [kHomepageURL]: '',
+  [kUpdateURL]: '',
+  [kDownloadURL]: '',
+  [kIcon]: '',
+  [kOrigInclude]: true,
+  [kOrigExclude]: true,
+  [kOrigMatch]: true,
+  [kOrigExcludeMatch]: true,
+  tags: '',
+};
+const toProp = val => val !== '' ? val : null; // `null` removes the prop from script object
+const CUSTOM_LISTS = [
+  kInclude,
+  kMatch,
+  kExclude,
+  kExcludeMatch,
+];
+const toList = text => (
+  text.trim()
+    ? text.split('\n').map(line => line.trim()).filter(Boolean)
+    : null // `null` removes the prop from script object
+);
+const CUSTOM_ENUM = [
+  INJECT_INTO,
+  RUN_AT,
+];
+const toEnum = val => val || null; // `null` removes the prop from script object
+const K_PREV_PANEL = 'Alt-PageUp';
+const K_NEXT_PANEL = 'Alt-PageDown';
+const compareString = (a, b) => (a < b ? -1 : a > b);
+/** @param {VMScript.Config} config */
+const collectShouldUpdate = ({ shouldUpdate, _editable }) => (
+  +shouldUpdate && (shouldUpdate + _editable)
+);
+const extractLine = (str, pos) => {
+  if (pos >= 0) {
+    const i = str.lastIndexOf('\n', pos) + 1;
+    const j = str.indexOf('\n', pos);
+    return str.slice(i, j > 0 ? j : undefined);
+  }
+};
+const reHASH = /#/;
+</script>
+
+<script setup>
+import { computed, nextTick, onActivated, onDeactivated, onMounted, ref, watch } from 'vue';
+import VmCode from '@/common/ui/code';
+import VmExternals from '@/common/ui/externals';
+import LocaleGroup from '@/common/ui/locale-group';
+import { kStorageSize, store } from '../../utils';
 import VmSettings from './settings';
 import VMSettingsUpdate from './settings-update';
 import VmValues from './values';
@@ -135,16 +192,29 @@ const commands = {
 };
 const hotkeys = ref();
 const errors = ref();
+const hashPattern = computed(() => { // eslint-disable-line vue/return-in-computed-property
+  for (const sectionKey of ['meta', 'custom']) {
+    for (const key of CUSTOM_LISTS) {
+      let val = script.value[sectionKey][key];
+      if (val && (
+        isObject(val)
+          ? val = val.find(reHASH.test, reHASH)
+          : val = extractLine(val, val.indexOf('#'), 100)
+      )) {
+        return val.length > 100 ? val.slice(0, 100) + '...' : val;
+      }
+    }
+  }
+});
 const fatal = ref();
 const frozen = ref(false);
 const frozenNote = ref(false);
-const urlMatching = ref('https://violentmonkey.github.io/api/matching/');
 
 const navItems = computed(() => {
-  const { meta, props: { id } } = script.value;
+  const { meta, props: { id }, $cache = {} } = script.value;
   const req = meta.require.length && '@require';
   const res = !isEmpty(meta.resources) && '@resource';
-  const size = store.storageSize;
+  const size = $cache[kStorageSize];
   return {
     code: i18n('editNavCode'),
     settings: i18n('editNavSettings'),
@@ -175,42 +245,6 @@ watch(() => props.initial.error, error => {
 watch(codeDirty, onDirty);
 watch(script, onScript);
 
-const CUSTOM_PROPS = {
-  name: '',
-  homepageURL: '',
-  updateURL: '',
-  downloadURL: '',
-  tags: '',
-  origInclude: true,
-  origExclude: true,
-  origMatch: true,
-  origExcludeMatch: true,
-};
-const toProp = val => val !== '' ? val : null; // `null` removes the prop from script object
-const CUSTOM_LISTS = [
-  'include',
-  'match',
-  'exclude',
-  'excludeMatch',
-];
-const toList = text => (
-  text.trim()
-    ? text.split('\n').map(line => line.trim()).filter(Boolean)
-    : null // `null` removes the prop from script object
-);
-const CUSTOM_ENUM = [
-  INJECT_INTO,
-  RUN_AT,
-];
-const toEnum = val => val || null; // `null` removes the prop from script object
-const K_PREV_PANEL = 'Alt-PageUp';
-const K_NEXT_PANEL = 'Alt-PageDown';
-const compareString = (a, b) => (a < b ? -1 : a > b);
-/** @param {VMScript.Config} config */
-const collectShouldUpdate = ({ shouldUpdate, _editable }) => (
-  +shouldUpdate && (shouldUpdate + _editable)
-);
-
 {
   // The eslint rule is bugged as this is a block scope, not a global scope.
   const src = props.initial; // eslint-disable-line vue/no-setup-props-destructure
@@ -227,7 +261,6 @@ onMounted(() => {
   if (options.get('editorWindow') && global.history.length === 1) {
     browser.windows?.getCurrent({ populate: true }).then(setupSavePosition);
   }
-  store.storageSize = 0;
   // hotkeys
   const navLabels = Object.values(navItems.value);
   const hk = hotkeys.value = [
@@ -290,6 +323,8 @@ async function save() {
       // otherwise the script with same namespace will be overridden
       isNew: !id,
       message: '',
+      reuseDeps: true,
+      bumpDate: true,
     });
     const newId = res?.where?.id;
     CM.markClean();
@@ -310,7 +345,7 @@ function close(entirely) {
   } else {
     emit('close');
     // FF doesn't emit `blur` when CodeMirror's textarea is removed
-    if (IS_FIREFOX) document.activeElement?.blur();
+    if (IS_FIREFOX) getActiveElement()?.blur();
   }
 }
 async function saveClose() {
@@ -416,8 +451,8 @@ function setupSavePosition({ id: curWndId, tabs }) {
   }
   &-body {
     padding: .5rem 1rem;
-    // overflow: auto;
     background: var(--bg);
+    flex: 1;
   }
   &-nav-item {
     display: inline-block;
@@ -483,16 +518,14 @@ function setupSavePosition({ id: curWndId, tabs }) {
   }
 }
 
-.touch .edit {
-  // fixed/absolute doesn't work well with scroll in Firefox Android
-  position: static;
-  // larger than 100vh to force overflow so that the toolbar can be hidden in Firefox Android
+.touch body {
+  position: relative;
+  /*
+   * Set height to 1px larger than screen height to force overflow so that the toolbar can be hidden in Firefox Android.
+   * Use `100vh` (largest possible viewport) to avoid flashing caused by URL bar resizing.
+   * See https://developer.chrome.com/blog/url-bar-resizing
+   */
   min-height: calc(100vh + 1px);
-}
-
-.edit-open {
-  /* TODO: fix vueleton's tooltip to not destroy layout at right bottom window corner */
-  overflow: hidden;
 }
 
 @media (max-width: 767px) {

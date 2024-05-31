@@ -1,6 +1,11 @@
-import { FastLookup, safeConcat } from './util';
+import { FastLookup, safeAssign, safeConcat } from './util';
 
+const kConsole = 'console';
 const scopeSym = SafeSymbol.unscopables;
+const globalDesc = createNullObj();
+/** Original ~50 global functions such as setTimeout that some sites override.
+ * Not saving all globals because it would waste a lot of time on each page and frame. */
+const globalFunctionDesc = createNullObj();
 const globalKeysSet = FastLookup();
 const globalKeys = (function makeGlobalKeys() {
   const kWrappedJSObject = 'wrappedJSObject';
@@ -9,6 +14,8 @@ const globalKeys = (function makeGlobalKeys() {
   const numFrames = window::getWindowLength();
   // True if `names` is usable as is, but FF is bugged: its names have duplicates
   let ok = !IS_FIREFOX;
+  let desc;
+  let v;
   for (const key of names) {
     if (+key >= 0 && key < numFrames
       || isContentMode && (
@@ -18,13 +25,25 @@ const globalKeys = (function makeGlobalKeys() {
       ok = false;
     } else {
       globalKeysSet.set(key, 1);
+      /* Saving built-in global descriptors except constructors and onXXX events,
+         checking length>=3 to prevent calling String.prototype index getters */
+      if (key >= 'a' && key <= 'z' && (key.length < 3 || key[0] !== 'o' || key[1] !== 'n')
+      && (desc = describeProperty(window, key))) {
+        setPrototypeOf(desc, null); // to read desc.XXX without calling Object.prototype getters
+        (desc.enumerable && isFunction(desc.value)
+          ? globalFunctionDesc
+          : globalDesc
+        )[key] = desc;
+        if (key === kConsole && isObject(v = desc.value)) desc.value = nullObjFrom(v);
+      }
     }
   }
   /* Chrome and FF page mode: `global` is `window`
      FF content mode: `global` is different, some props e.g. `isFinite` are defined only there */
   if (global !== window) {
     builtinGlobals[1]::forEach(key => {
-      if (!(+key >= 0 && key < numFrames)) { // keep the `!` inversion to avoid safe-guarding isNaN
+      if (!(+key >= 0 && key < numFrames)) {
+        // Using `!` to avoid the need to use and safe-guard isNaN
         globalKeysSet.set(key, -1);
         ok = false;
       }
@@ -40,35 +59,44 @@ const globalKeys = (function makeGlobalKeys() {
   }
   return ok ? names : globalKeysSet.toArray();
 }());
-const inheritedKeys = createNullObj();
-const globalDesc = createNullObj();
+const inheritedDesc = createNullObj();
+
+const isChildWindowKey = key => (key = +key) >= 0 /* is number */
+  && (key === (key | 0)) /* is 32-bit integer, no fraction */
+  && key < window::getWindowLength();
+
 const updateGlobalDesc = name => {
   let src;
-  let desc;
-  let fn;
-  if ((src = inheritedKeys[name])
-  || (src = globalKeysSet.get(name)) && (src = src > 0 ? window : global)) {
-    if ((desc = describeProperty(src, name))) {
-      desc = nullObjFrom(desc);
-      /* ~45 enumerable action functions belong to `window` and need to be bound to it,
-       * the non-enum ~10 can be unbound, and `eval` MUST be unbound to run in scope. */
-      if (name >= 'a' && desc.enumerable && isFunction(fn = desc.value)) {
-        // TODO: switch to SafeProxy and preserve thisArg when it's not our wrapper or its cache?
-        fn = safeBind(fn, src === global ? global : window);
-        desc.value = defineProperty(fn, 'name', { __proto__: null, value: name });
-      }
-      // Using `!` to avoid the need to use and safe-guard isNaN
-      if (!(+name >= 0 && name < window::getWindowLength())) {
-        globalDesc[name] = desc;
-      }
-      return desc;
-    }
+  let isChild;
+  const descFn = globalFunctionDesc[name];
+  const desc = descFn
+    || inheritedDesc[name]
+    || (src = globalKeysSet.get(name) || (isChild = isChildWindowKey(name)))
+    && describeProperty(src = src > 0 ? window : global, name);
+  if (!desc) return;
+  if (!descFn) setPrototypeOf(desc, null);
+  else if (process.env.DEV && getPrototypeOf(desc)) throw 'proto must be null';
+  /* ~45 enumerable action functions belong to `window` and need to be bound to it,
+   * the non-enum ~10 can be unbound, and `eval` MUST be unbound to run in scope. */
+  if (descFn) {
+    // TODO: switch to SafeProxy and preserve thisArg when it's not our wrapper or its cache?
+    const fn = safeBind(desc.value, src === global ? global : window);
+    desc.value = defineProperty(fn, 'name', { __proto__: null, value: name });
+    globalFunctionDesc[name] = undefined;
+    globalDesc[name] = desc;
+  } else if (!isChild) {
+    // Using `!` to avoid the need to use and safe-guard isNaN
+    globalDesc[name] = desc;
   }
+  return desc;
 };
 [SafeEventTarget, Object]::forEach(src => {
-  reflectOwnKeys(src = src[PROTO])::forEach(key => {
-    inheritedKeys[key] = src;
-  });
+  src = src[PROTO];
+  for (const key of reflectOwnKeys(src)) {
+    const desc = describeProperty(src, key);
+    setPrototypeOf(desc, null); // to read desc.XXX without calling Object.prototype getters
+    (isFunction(desc.value) ? globalFunctionDesc : inheritedDesc)[key] = desc;
+  }
 });
 builtinGlobals = null; // eslint-disable-line no-global-assign
 
@@ -106,7 +134,7 @@ export function makeGlobalWrapper(local) {
     get: (_, name) => {
       if (name === 'undefined' || name === scopeSym) return;
       if ((_ = local[name]) !== undefined || name in local) return _;
-      return proxyDescribe(local, name, wrapper, events) && local[name];
+      return proxyDescribe(local, name, wrapper, events, true);
     },
     getOwnPropertyDescriptor: (_, name) => describeProperty(local, name)
       || proxyDescribe(local, name, wrapper, events),
@@ -138,10 +166,12 @@ function makeOwnKeys(local, globals) {
   );
 }
 
-function proxyDescribe(local, name, wrapper, events) {
-  let desc = globalDesc[name] || updateGlobalDesc(name);
+function proxyDescribe(local, name, wrapper, events, returnAsValue) {
+  let known;
+  let desc = (known = globalDesc[name]) || updateGlobalDesc(name);
   if (!desc) return;
-  const { get, set, value } = desc;
+  let { get, set, value } = desc;
+  const isChild = !known && isChildWindowKey(name);
   const isWindow = value === window
     || name === 'window'
     || name === 'self'
@@ -149,7 +179,8 @@ function proxyDescribe(local, name, wrapper, events) {
     || name === 'top' && window === top // `top` is unforgeable
     || name === 'parent' && window === window::getWindowParent();
   if (isWindow) {
-    desc.value = wrapper;
+    value = desc.value = wrapper;
+    get = false;
     delete desc.get;
     delete desc.set;
   } else if (get && set && typeof name === 'string'
@@ -160,9 +191,15 @@ function proxyDescribe(local, name, wrapper, events) {
   } else {
     if (get) desc.get = safeBind(get, window);
     if (set) desc.set = safeBind(set, window);
+    if (value && name === kConsole) desc.value = value = safeAssign({}, value);
   }
-  defineProperty(local, name, desc); /* proto is null */// eslint-disable-line no-restricted-syntax
-  return desc;
+  if (!isChild) {
+    defineProperty(local, name, desc); /* proto is null */// eslint-disable-line no-restricted-syntax
+  }
+  return !returnAsValue ? desc
+    : !get ? value
+      : isChild ? global[name]
+        : local[name];
 }
 
 function setWindowEvent(desc, name, events, wrapper) {

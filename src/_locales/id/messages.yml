@@ -153,6 +153,12 @@ descEditorOptions:
     href="https://github.com/codemirror/CodeMirror/tree/master/theme"
     target="_blank" rel="noopener noreferrer">kode CSS tema</a> di dalam kotak
     "Gaya Khusus" di bawah.
+descEditorOptionsGeneric:
+  description: Description of editor options in VM settings.
+  message: ''
+descEditorOptionsVM:
+  description: Description of nonstandard editor options in VM settings.
+  message: ''
 descScriptTemplate:
   description: Description of script template section.
   message: >-
@@ -216,6 +222,9 @@ failureReasonNoninjectable:
   message: |-
     Violentmonkey tidak bisa menjalankan userscript di halaman ini
     (contoh: UI peramban atau ekstensi)
+failureReasonRestarted:
+  description: Shown in the popup.
+  message: ''
 fileInstallBlocked:
   description: Text in the installer when a local file is dropped into the browser window.
   message: ''
@@ -255,11 +264,17 @@ genericOn:
 genericUseGlobal:
   description: To indicate some per-script option will use its analog in global settings.
   message: gunakan pengaturan global
+hashPatternWarning:
+  description: Warning shown in the editor, $1 is the pattern(s).
+  message: ''
 headerRecycleBin:
   description: Text shown in the header when scripts in recycle bin are listed.
   message: Keranjang Sampah
 helpForLocalFile:
   description: Label of the checkbox.
+  message: ''
+hintForBatchAction:
+  description: Hint shown next to the buttons for batch actions.
   message: ''
 hintInputURL:
   description: Hint for a prompt box to input URL of a user script.
@@ -794,6 +809,9 @@ msgSyncing:
 msgSyntaxError:
   description: Shown in popup when a script didn't run and we don't know the exact reason.
   message: Galat sintaksis?
+msgTardyMatch:
+  description: Shown in popup for scripts that missed their chance to run.
+  message: ''
 msgUpdated:
   description: Message shown when a script is updated/reinstalled.
   message: Skrip diperbarui.
@@ -880,6 +898,7 @@ reloadTabTrackHint:
 removeAllScripts:
   description: Button to remove all scripts
   message: Hapus semua skrip
+  touched: false
 removeAllScriptsConfirm:
   description: Confirmation shown after clicking the `Remove all scripts` button.
   message: >-
@@ -887,6 +906,7 @@ removeAllScriptsConfirm:
 
     Keranjang Sampah akan dikosongkan secara permanen setelah beberapa saat.
     Anda juga bisa membukanya dan mengosongkannya sekarang juga.
+  touched: false
 searchCaseSensitive:
   description: Option to perform a case-sensitive search
   message: Sesuai besar kecil huruf

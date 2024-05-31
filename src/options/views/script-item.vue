@@ -18,16 +18,31 @@
     </div>
     <!-- We disable native dragging on name to avoid confusion with exec re-ordering.
     Users who want to open a new tab via dragging the link can drag the icon. -->
-    <div class="script-info-1">
+    <div class="script-info-1 ellipsis">
       <a v-text="script.$cache.name" v-bind="viewTable && { draggable: false, href: url, tabIndex }"
          :data-order="script.config.removed ? null : script.props.position"
          class="script-name ellipsis" />
       <div class="script-tags" v-if="canRender">
-        <a v-for="(item, i) in tags.slice(0, 2)" :key="i" v-text="`#${item}`" @click.prevent="onTagClick(item)" :class="{ active: activeTags?.includes(item) }"></a>
+        <a
+          v-for="(item, i) in tags.slice(0, 2)"
+          :key="i"
+          v-text="`#${item}`"
+          @click.prevent="onTagClick(item)"
+          :class="{ active: activeTags?.includes(item) }"
+          :data-tag="item"
+        ></a>
         <Dropdown v-if="tags.length > 2">
           <a>...</a>
           <template #content>
-            <a v-for="(item, i) in tags.slice(2)" :key="i" class="dropdown-menu-item" v-text="`#${item}`" @click.prevent="onTagClick(item)" :class="{ active: activeTags?.includes(item) }"></a>
+            <a
+              v-for="(item, i) in tags.slice(2)"
+              :key="i"
+              class="dropdown-menu-item"
+              v-text="`#${item}`"
+              @click.prevent="onTagClick(item)"
+              :class="{ active: activeTags?.includes(item) }"
+              :data-tag="item"
+            ></a>
           </template>
         </Dropdown>
       </div>
@@ -136,10 +151,10 @@ import {
   getLocaleString, getScriptHome, formatTime,
   getScriptSupportUrl, i18n,
 } from '@/common';
-import { showConfirmation } from '@/common/ui';
+import { getActiveElement, showConfirmation } from '@/common/ui';
 import Icon from '@/common/ui/icon';
 import { keyboardService, isInput, toggleTip } from '@/common/keyboard';
-import { store } from '../utils';
+import { kDescription, store } from '../utils';
 
 const itemMargin = 8;
 
@@ -183,7 +198,7 @@ export default {
       return this.script.config.enabled ? this.i18n('buttonDisable') : this.i18n('buttonEnable');
     },
     description() {
-      return this.script.custom.description || getLocaleString(this.script.meta, 'description');
+      return this.script.custom[kDescription] || getLocaleString(this.script.meta, kDescription);
     },
     updatedAt() {
       const { props, config } = this.script;
@@ -235,7 +250,7 @@ export default {
         } else if (rect.top < pRect.top + itemMargin) {
           delta -= pRect.top - rect.top + itemMargin;
         }
-        if (!isInput(document.activeElement)) {
+        if (!isInput(getActiveElement())) {
           // focus without scrolling, then scroll smoothly
           $el.focus({ preventScroll: true });
         }
@@ -309,7 +324,6 @@ $removedItemHeight: calc(
   position: relative;
   display: grid;
   grid-template-columns: $iconSize 1fr auto;
-  align-items: center;
   margin: $itemMargin 0 0 $itemMargin;
   padding: $itemPadT 10px $itemPadB;
   border: 1px solid var(--fill-3);
@@ -367,7 +381,8 @@ $removedItemHeight: calc(
   &-info-1 {
     display: flex;
     gap: 8px;
-    min-width: 100px;
+    align-items: center;
+    align-self: flex-start;
   }
   &-name {
     font-weight: 500;
@@ -466,7 +481,7 @@ $removedItemHeight: calc(
     min-width: 4em;
     > .ellipsis {
       display: inline-block;
-      max-width: 100px;
+      max-width: 15ch;
     }
   }
   &-message {
@@ -543,7 +558,7 @@ $removedItemHeight: calc(
         auto /* main icons */
         auto /* trash icon */
         $iconSize /* script icon */
-        1fr /* name */
+        minmax(15ch, 1fr) /* name */
         auto /* info */;
       align-items: center;
       height: 2.5rem;
@@ -564,7 +579,7 @@ $removedItemHeight: calc(
         pointer-events: none;
         z-index: 2;
       }
-      &-name {
+      &-info-1 {
         display: flex;
         align-self: stretch;
         align-items: center;
@@ -608,9 +623,6 @@ $removedItemHeight: calc(
       }
       &.removed .script-buttons .sep {
         display: none;
-      }
-      &-author > .ellipsis {
-        max-width: 15vw;
       }
       &-message {
         position: absolute;

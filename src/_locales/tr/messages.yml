@@ -151,6 +151,12 @@ descEditorOptions:
     Violentmonkey'de çalışmayabililir. Tüm listeyi görmek için <a
     href="https://codemirror.net/doc/manual.html#config" target="_blank"
     rel="noopener noreferrer">tıklayın</a>
+descEditorOptionsGeneric:
+  description: Description of editor options in VM settings.
+  message: ''
+descEditorOptionsVM:
+  description: Description of nonstandard editor options in VM settings.
+  message: ''
 descScriptTemplate:
   description: Description of script template section.
   message: ''
@@ -217,6 +223,9 @@ failureReasonNoninjectable:
 
     (olağan şüpheliler: tarayıcı arayüzü, bir başka eklenti, poliçe sebebiyle
     bloklama, Opera'da bir arama motoru sayfası)
+failureReasonRestarted:
+  description: Shown in the popup.
+  message: ''
 fileInstallBlocked:
   description: Text in the installer when a local file is dropped into the browser window.
   message: >-
@@ -265,12 +274,18 @@ genericOn:
 genericUseGlobal:
   description: To indicate some per-script option will use its analog in global settings.
   message: genel ayarları kullan
+hashPatternWarning:
+  description: Warning shown in the editor, $1 is the pattern(s).
+  message: ''
 headerRecycleBin:
   description: Text shown in the header when scripts in recycle bin are listed.
   message: Geri Dönüşüm Kutusu
 helpForLocalFile:
   description: Label of the checkbox.
   message: Sürükle ve bırak yerel komut dosyaları için talimatları göster
+hintForBatchAction:
+  description: Hint shown next to the buttons for batch actions.
+  message: ''
 hintInputURL:
   description: Hint for a prompt box to input URL of a user script.
   message: 'URL Girdisi:'
@@ -799,6 +814,9 @@ msgSyncing:
 msgSyntaxError:
   description: Shown in popup when a script didn't run and we don't know the exact reason.
   message: Söz dizimi hatası?
+msgTardyMatch:
+  description: Shown in popup for scripts that missed their chance to run.
+  message: ''
 msgUpdated:
   description: Message shown when a script is updated/reinstalled.
   message: Betik güncellendi.
@@ -887,9 +905,11 @@ reloadTabTrackHint:
 removeAllScripts:
   description: Button to remove all scripts
   message: ''
+  touched: false
 removeAllScriptsConfirm:
   description: Confirmation shown after clicking the `Remove all scripts` button.
   message: ''
+  touched: false
 searchCaseSensitive:
   description: Option to perform a case-sensitive search
   message: Büyük/küçük harfe duyarlı
